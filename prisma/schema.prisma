@@ -1,0 +1,308 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum Role {
+  USER
+  CONSULTANT
+  ADMIN
+}
+
+enum SessionType {
+  CALL
+  CHAT
+  MESSAGE
+  APPOINTMENT
+}
+
+enum TransactionType {
+  TOPUP
+  SESSION
+  REFUND
+  WITHDRAWAL
+}
+
+enum SessionStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum NotificationType {
+  AVAILABILITY
+  APPOINTMENT
+  REVIEW
+  SYSTEM
+  PROMOTION
+}
+
+// NextAuth models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// Core application models
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  phone         String?
+  role          Role      @default(USER)
+  walletBalance Int       @default(0) // in cents
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // NextAuth relations
+  accounts Account[]
+  sessions Session[]
+
+  // App relations
+  transactions         Transaction[]
+  reviews              Review[]
+  favorites            UserFavorite[]
+  appointments         Appointment[]
+  consultationSessions ConsultationSession[]
+  notifications        Notification[]
+  Consultant           Consultant?
+}
+
+model Consultant {
+  id             String        @id @default(cuid())
+  userId         String        @unique
+  name           String
+  email          String        @unique
+  specialty      String
+  rating         Float         @default(0)
+  reviewCount    Int           @default(0)
+  pricePerMin    Float // in euros
+  availability   String        @default("offline") // online, busy, offline
+  languages      String[]
+  experience     String
+  image          String?
+  bio            String?
+  location       String?
+  responseTime   String        @default("Binnen 24 uur")
+  totalSessions  Int           @default(0)
+  repeatClients  Int           @default(0)
+  certifications String[]
+  workingHours   String?
+  services       SessionType[]
+  isVerified     Boolean       @default(false)
+  isActive       Boolean       @default(true)
+  joinedAt       DateTime      @default(now())
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  // Relations
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specialties          ConsultantSpecialty[]
+  consultationSessions ConsultationSession[]
+  reviews              Review[]
+  favorites            UserFavorite[]
+  appointments         Appointment[]
+}
+
+model Specialty {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String
+  color       String   @default("bg-blue-100 text-blue-800")
+  count       Int      @default(0)
+  image       String?
+  tags        String[]
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  consultants ConsultantSpecialty[]
+}
+
+model ConsultantSpecialty {
+  id           String   @id @default(cuid())
+  consultantId String
+  specialtyId  String
+  isPrimary    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  consultant Consultant @relation(fields: [consultantId], references: [id], onDelete: Cascade)
+  specialty  Specialty  @relation(fields: [specialtyId], references: [id], onDelete: Cascade)
+
+  @@unique([consultantId, specialtyId])
+}
+
+model ConsultationSession {
+  id           String        @id @default(cuid())
+  userId       String
+  consultantId String
+  type         SessionType
+  duration     Int? // in minutes
+  cost         Int // in cents
+  status       SessionStatus @default(PENDING)
+  notes        String?
+  startedAt    DateTime?
+  endedAt      DateTime?
+  scheduledAt  DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id])
+  consultant  Consultant   @relation(fields: [consultantId], references: [id])
+  review      Review?
+  transaction Transaction?
+}
+
+model Review {
+  id           String   @id @default(cuid())
+  userId       String
+  consultantId String
+  sessionId    String   @unique
+  rating       Int // 1-5 stars
+  comment      String?
+  isVerified   Boolean  @default(false)
+  isVisible    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user       User                @relation(fields: [userId], references: [id])
+  consultant Consultant          @relation(fields: [consultantId], references: [id])
+  session    ConsultationSession @relation(fields: [sessionId], references: [id])
+}
+
+model UserFavorite {
+  id           String   @id @default(cuid())
+  userId       String
+  consultantId String
+  createdAt    DateTime @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  consultant Consultant @relation(fields: [consultantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, consultantId])
+}
+
+model Appointment {
+  id           String            @id @default(cuid())
+  userId       String
+  consultantId String
+  type         SessionType
+  scheduledAt  DateTime
+  duration     Int? // in minutes
+  cost         Int? // in cents
+  status       AppointmentStatus @default(PENDING)
+  notes        String?
+  cancelReason String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id])
+  consultant Consultant @relation(fields: [consultantId], references: [id])
+}
+
+model Transaction {
+  id              String            @id @default(cuid())
+  userId          String
+  sessionId       String?           @unique
+  type            TransactionType
+  amount          Int // in cents
+  description     String
+  status          TransactionStatus @default(PENDING)
+  stripeSessionId String?
+  stripePaymentId String?
+  metadata        Json?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  user    User                 @relation(fields: [userId], references: [id])
+  session ConsultationSession? @relation(fields: [sessionId], references: [id])
+}
+
+model BlogPost {
+  id          String    @id @default(cuid())
+  title       String
+  slug        String    @unique
+  content     String    @db.Text
+  excerpt     String?
+  image       String?
+  tags        String[]
+  published   Boolean   @default(false)
+  featured    Boolean   @default(false)
+  viewCount   Int       @default(0)
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  data      Json?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
