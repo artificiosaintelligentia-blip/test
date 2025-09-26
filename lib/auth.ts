@@ -1,3 +1,4 @@
+import 'server-only';
 import { NextAuthOptions } from 'next-auth';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import EmailProvider from 'next-auth/providers/email';
